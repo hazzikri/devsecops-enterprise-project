@@ -56,13 +56,13 @@ jobs:
 
       - name: Lint Helm Chart
         run: |
-          helm lint charts/monitoring-app
+          helm lint monitoring-app
 
       - name: Create KinD (Kubernetes in Docker) Cluster
         uses: helm/kind-action@v1.10.0
 
       - name: Deploy Monitoring App via Helm
         run: |
-          helm install enterprise-monitoring charts/monitoring-app
+          helm install enterprise-monitoring monitoring-app
           kubectl get deployments
           kubectl get svc
