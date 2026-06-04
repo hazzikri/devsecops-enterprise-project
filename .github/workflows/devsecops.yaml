@@ -10,7 +10,6 @@ jobs:
   terraform-security:
     name: "IaC Security Scan"
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -19,3 +18,25 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  ansible-configuration:
+    name: "Ansible Configuration Management"
+    needs: terraform-security # Kerja baru jalan setelah Terraform aman
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core ansible-lint
+
+      - name: Run Ansible Playbook Simulation
+        run: |
+          ansible-playbook ansible/playbook.yml
