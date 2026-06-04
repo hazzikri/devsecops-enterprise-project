@@ -21,7 +21,7 @@ jobs:
 
   ansible-configuration:
     name: "Ansible Configuration Management"
-    needs: terraform-security # Kerja baru jalan setelah Terraform aman
+    needs: terraform-security
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -40,3 +40,29 @@ jobs:
       - name: Run Ansible Playbook Simulation
         run: |
           ansible-playbook ansible/playbook.yml
+
+  kubernetes-deployment:
+    name: "Kubernetes & Helm Deployment"
+    needs: ansible-configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.12.0'
+
+      - name: Lint Helm Chart
+        run: |
+          helm lint charts/monitoring-app
+
+      - name: Create KinD (Kubernetes in Docker) Cluster
+        uses: helm/kind-action@v1.10.0
+
+      - name: Deploy Monitoring App via Helm
+        run: |
+          helm install enterprise-monitoring charts/monitoring-app
+          kubectl get deployments
+          kubectl get svc
