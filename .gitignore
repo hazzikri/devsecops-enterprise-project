@@ -1,0 +1,9 @@
+# Abaikan folder plugin Terraform
+.terraform/
+
+# Abaikan file state rahasia Terraform
+*.tfstate
+*.tfstate.backup
+
+# Abaikan file log jika ada error
+*.log
