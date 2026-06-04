@@ -1,10 +1,10 @@
-# Konfigurasi Aplikasi Gatus (Health Checker)
+# Konfigurasi Aplikasi Gatus
 gatus:
   enabled: true
   image: twinproduction/gatus:latest
   port: 8080
 
-# Konfigurasi Grafana (Dashboard Visualisasi)
+# Konfigurasi Grafana
 grafana:
   enabled: true
   image: grafana/grafana:latest
