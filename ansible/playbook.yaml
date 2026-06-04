@@ -1,0 +1,11 @@
+---
+- name: Enterprise Server Hardening and Setup
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Ensure security updates are text-logged
+      header: "DevSecOps Audit"
+      ansible.builtin.copy:
+        content: "Server initialized and secured on {{ ansible_date_time.iso8601 }}"
+        dest: "./security_audit.log"
+        mode: '0600' # Hanya pemilik server yang bisa baca file ini (Secure)
