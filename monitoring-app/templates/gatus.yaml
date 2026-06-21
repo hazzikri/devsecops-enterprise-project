@@ -3,6 +3,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: enterprise-gatus
+  labels:
+    app: gatus
 spec:
   replicas: 1
   selector:
@@ -18,16 +20,24 @@ spec:
           image: {{ .Values.gatus.image }}
           ports:
             - containerPort: {{ .Values.gatus.port }}
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: gatus-service
+  name: enterprise-gatus
 spec:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: {{ .Values.gatus.port }}
   selector:
     app: gatus
+  ports:
+    - protocol: TCP
+      port: {{ .Values.gatus.port }}
+      targetPort: {{ .Values.gatus.port }}
+  type: ClusterIP
 {{- end }}
