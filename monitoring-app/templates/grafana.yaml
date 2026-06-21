@@ -3,6 +3,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: enterprise-grafana
+  labels:
+    app: grafana
 spec:
   replicas: 1
   selector:
@@ -18,16 +20,24 @@ spec:
           image: {{ .Values.grafana.image }}
           ports:
             - containerPort: {{ .Values.grafana.port }}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: grafana-service
+  name: enterprise-grafana
 spec:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: {{ .Values.grafana.port }}
   selector:
     app: grafana
+  ports:
+    - protocol: TCP
+      port: {{ .Values.grafana.port }}
+      targetPort: {{ .Values.grafana.port }}
+  type: ClusterIP
 {{- end }}
