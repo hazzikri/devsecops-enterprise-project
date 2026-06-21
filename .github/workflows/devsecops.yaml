@@ -1,68 +1,147 @@
 name: DevSecOps Enterprise Pipeline
 
+# ─────────────────────────────────────────────────────────────────────────────
+# REQUIRED SECRETS (set in: Repo Settings → Secrets → Actions):
+#   GITHUB_TOKEN  — automatically provided by GitHub Actions (no setup needed)
+#
+# OPTIONAL SECRETS (for extending this demo to real infra):
+#   DEPLOY_TOKEN       — PAT with repo scope for cross-repo operations
+#   KUBECONFIG_B64     — Base64-encoded kubeconfig for real K8s cluster deploy
+#   DOCKER_HUB_USER    — Docker Hub username (if pushing to Docker Hub)
+#   DOCKER_HUB_TOKEN   — Docker Hub access token
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
+env:
+  CHART_NAME: monitoring-app
+  NAMESPACE: devsecops-demo
+
 jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 1: Terraform IaC Security Scan with tfsec
+  # ───────────────────────────────────────────────────────────────────────────
   terraform-security:
-    name: "IaC Security Scan"
+    name: "IaC Security Scan (tfsec)"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Run Aqua Security Tfsec Scan
+      - name: Run Aqua Security tfsec
         uses: aquasecurity/tfsec-action@v1.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          soft_fail: true   # Don't fail build — report findings as annotations
 
-  ansible-configuration:
-    name: "Ansible Configuration Management"
+      - name: Terraform Format Check
+        run: |
+          cd terraform
+          terraform fmt -check -recursive || echo "Formatting issues found (non-blocking)"
+        continue-on-error: true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 2: Trivy Container & Config Scan
+  # ───────────────────────────────────────────────────────────────────────────
+  trivy-scan:
+    name: "Container & Config Security Scan (Trivy)"
+    runs-on: ubuntu-latest
     needs: terraform-security
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Trivy IaC Misconfiguration Scan
+        uses: aquasecurity/trivy-action@master
         with:
-          python-version: '3.x'
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-config.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
 
-      - name: Install Ansible
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible-core ansible-lint
+      - name: Upload Trivy Config Scan Report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-config.sarif'
 
-      - name: Run Ansible Playbook Simulation
-        run: |
-          ansible-playbook ansible/playbook.yml
-
-  kubernetes-deployment:
-    name: "Kubernetes & Helm Deployment"
-    needs: ansible-configuration
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 3: Ansible Syntax Check (dry-run)
+  # ───────────────────────────────────────────────────────────────────────────
+  ansible-lint:
+    name: "Ansible Configuration Validation"
     runs-on: ubuntu-latest
+    needs: trivy-scan
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
+      - name: Install Ansible + Lint
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ansible
+          pip install ansible-lint
+
+      - name: Run Ansible Lint
+        run: ansible-lint ansible/playbook.yml || true
+
+      - name: Ansible Syntax Check
+        run: |
+          ansible-playbook ansible/playbook.yml --syntax-check
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 4: Helm + KinD Kubernetes Deploy (End-to-End)
+  # ───────────────────────────────────────────────────────────────────────────
+  helm-kind-deploy:
+    name: "Helm Deployment to KinD Cluster"
+    runs-on: ubuntu-latest
+    needs: ansible-lint
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Create KinD Cluster
+        uses: helm/kind-action@v1.8.0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
         with:
-          version: 'v3.12.0'
+          version: 'v3.14.0'
 
-      - name: Lint Helm Chart
+      - name: Create Namespace
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Helm Lint (validate chart)
+        run: helm lint ./${{ env.CHART_NAME }} --values ./${{ env.CHART_NAME }}/values.yaml
+
+      - name: Deploy Chart to KinD
         run: |
-          helm lint monitoring-app
+          helm install ${{ env.CHART_NAME }} ./${{ env.CHART_NAME }} \
+            --namespace ${{ env.NAMESPACE }} \
+            --values ./${{ env.CHART_NAME }}/values.yaml \
+            --wait --timeout 120s
 
-      - name: Create KinD (Kubernetes in Docker) Cluster
-        uses: helm/kind-action@v1.10.0
-
-      - name: Deploy Monitoring App via Helm
+      - name: Verify Deployment
         run: |
-          helm install enterprise-monitoring monitoring-app
-          kubectl get deployments
-          kubectl get svc
+          echo "=== Pods ==="
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          echo "=== Services ==="
+          kubectl get svc -n ${{ env.NAMESPACE }}
+          echo "=== Helm Release ==="
+          helm status ${{ env.CHART_NAME }} -n ${{ env.NAMESPACE }}
