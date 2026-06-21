@@ -16,11 +16,10 @@ resource "docker_image" "web_image" {
   keep_locally = false
 }
 
-# 3. Bikin dan jalankan kontainer dari image tersebut
-resource "docker_container" "web_server" {
+# 3. Buat container dari image Nginx
+resource "docker_container" "web_container" {
   image = docker_image.web_image.image_id
-  name  = "server-lab-01"
-  
+  name  = "devsecops-web-server"
   ports {
     internal = 80
     external = 8080
